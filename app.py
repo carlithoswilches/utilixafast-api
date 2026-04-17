@@ -5,7 +5,7 @@ import tempfile
 import os
 
 app = Flask(__name__)
-CORS(app)  # Permite que tu WordPress se comunique con la API
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=False)
 
 @app.route('/', methods=['GET'])
 def home():
