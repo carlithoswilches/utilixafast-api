@@ -49,5 +49,42 @@ def pdf_to_word():
         if os.path.exists(tmp_pdf.name):
             os.remove(tmp_pdf.name)
 
+@app.route('/compress/pdf', methods=['POST'])
+def compress_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se recibió ningún archivo"}), 400
+
+    file = request.files['file']
+
+    if file.filename == '' or not file.filename.endswith('.pdf'):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 400
+
+    tmp_input = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp_output = tmp_input.name.replace('.pdf', '_comprimido.pdf')
+
+    try:
+        file.save(tmp_input.name)
+        tmp_input.close()
+
+        # Comprimir con PyMuPDF
+        import fitz
+        doc = fitz.open(tmp_input.name)
+        doc.save(tmp_output, garbage=4, deflate=True, clean=True)
+        doc.close()
+
+        return send_file(
+            tmp_output,
+            as_attachment=True,
+            download_name='comprimido.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if os.path.exists(tmp_input.name):
+            os.remove(tmp_input.name)
+
 if __name__ == '__main__':
     app.run(debug=False)
