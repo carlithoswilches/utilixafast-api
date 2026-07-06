@@ -86,5 +86,54 @@ def compress_pdf():
         if os.path.exists(tmp_input.name):
             os.remove(tmp_input.name)
 
+@app.route('/merge/pdf', methods=['POST'])
+def merge_pdfs():
+    files = request.files.getlist('files')
+
+    if len(files) < 2:
+        return jsonify({"error": "Debes subir al menos 2 archivos PDF"}), 400
+
+    for f in files:
+        if f.filename == '' or not f.filename.lower().endswith('.pdf'):
+            return jsonify({"error": f"{f.filename} no es un PDF válido"}), 400
+
+    tmp_paths = []
+    tmp_output = None
+
+    try:
+        import fitz
+
+        merged = fitz.open()
+
+        for f in files:
+            tmp = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+            f.save(tmp.name)
+            tmp.close()
+            tmp_paths.append(tmp.name)
+
+            with fitz.open(tmp.name) as part:
+                merged.insert_pdf(part)
+
+        tmp_output = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False).name
+        merged.save(tmp_output)
+        merged.close()
+
+        return send_file(
+            tmp_output,
+            as_attachment=True,
+            download_name='documento_unido.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        for path in tmp_paths:
+            if os.path.exists(path):
+                os.remove(path)
+        if tmp_output and os.path.exists(tmp_output):
+            os.remove(tmp_output)
+
 if __name__ == '__main__':
     app.run(debug=False)
