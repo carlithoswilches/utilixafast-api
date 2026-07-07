@@ -368,5 +368,71 @@ def numerate_pdf():
         if tmp_output and os.path.exists(tmp_output):
             os.remove(tmp_output)
 
+@app.route('/delete-pages/pdf', methods=['POST'])
+def delete_pages_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se recibió ningún archivo"}), 400
+
+    file = request.files['file']
+    pages_str = request.form.get('pages', '')
+
+    if file.filename == '' or not file.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 400
+
+    if not pages_str.strip():
+        return jsonify({"error": "Debes indicar qué páginas eliminar (ej: 1,3,5)"}), 400
+
+    tmp_input = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp_output = None
+
+    try:
+        import fitz
+
+        file.save(tmp_input.name)
+        tmp_input.close()
+
+        doc = fitz.open(tmp_input.name)
+        total = doc.page_count
+
+        try:
+            pages_to_delete = sorted(set(
+                int(p.strip()) - 1 for p in pages_str.split(',') if p.strip()
+            ), reverse=True)
+        except ValueError:
+            doc.close()
+            return jsonify({"error": "Formato de páginas inválido, usa números separados por coma (ej: 1,3,5)"}), 400
+
+        for p in pages_to_delete:
+            if p < 0 or p >= total:
+                doc.close()
+                return jsonify({"error": f"La página {p + 1} no existe en este documento ({total} páginas en total)"}), 400
+
+        if len(pages_to_delete) >= total:
+            doc.close()
+            return jsonify({"error": "No puedes eliminar todas las páginas del documento"}), 400
+
+        for p in pages_to_delete:
+            doc.delete_page(p)
+
+        tmp_output = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False).name
+        doc.save(tmp_output)
+        doc.close()
+
+        return send_file(
+            tmp_output,
+            as_attachment=True,
+            download_name='sin_paginas.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if os.path.exists(tmp_input.name):
+            os.remove(tmp_input.name)
+        if tmp_output and os.path.exists(tmp_output):
+            os.remove(tmp_output)
+
 if __name__ == '__main__':
     app.run(debug=False)
