@@ -135,5 +135,68 @@ def merge_pdfs():
         if tmp_output and os.path.exists(tmp_output):
             os.remove(tmp_output)
 
+@app.route('/split/pdf', methods=['POST'])
+def split_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se recibió ningún archivo"}), 400
+
+    file = request.files['file']
+
+    if file.filename == '' or not file.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 400
+
+    tmp_input = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp_zip = None
+    page_paths = []
+
+    try:
+        import fitz
+        import zipfile
+
+        file.save(tmp_input.name)
+        tmp_input.close()
+
+        doc = fitz.open(tmp_input.name)
+
+        if doc.page_count < 2:
+            doc.close()
+            return jsonify({"error": "El PDF debe tener al menos 2 páginas para dividirlo"}), 400
+
+        base_name = os.path.splitext(file.filename)[0]
+
+        for i in range(doc.page_count):
+            single = fitz.open()
+            single.insert_pdf(doc, from_page=i, to_page=i)
+            page_path = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False).name
+            single.save(page_path)
+            single.close()
+            page_paths.append((page_path, f"{base_name}_pagina_{i + 1}.pdf"))
+
+        doc.close()
+
+        tmp_zip = tempfile.NamedTemporaryFile(suffix='.zip', delete=False).name
+        with zipfile.ZipFile(tmp_zip, 'w') as zipf:
+            for path, name in page_paths:
+                zipf.write(path, arcname=name)
+
+        return send_file(
+            tmp_zip,
+            as_attachment=True,
+            download_name=f'{base_name}_paginas.zip',
+            mimetype='application/zip'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if os.path.exists(tmp_input.name):
+            os.remove(tmp_input.name)
+        for path, _ in page_paths:
+            if os.path.exists(path):
+                os.remove(path)
+        if tmp_zip and os.path.exists(tmp_zip):
+            os.remove(tmp_zip)
+
 if __name__ == '__main__':
     app.run(debug=False)
