@@ -198,5 +198,58 @@ def split_pdf():
         if tmp_zip and os.path.exists(tmp_zip):
             os.remove(tmp_zip)
 
+@app.route('/rotate/pdf', methods=['POST'])
+def rotate_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se recibió ningún archivo"}), 400
+
+    file = request.files['file']
+    angle = request.form.get('angle', '90')
+
+    if file.filename == '' or not file.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 400
+
+    try:
+        angle = int(angle)
+        if angle not in (90, 180, 270):
+            return jsonify({"error": "El ángulo debe ser 90, 180 o 270"}), 400
+    except ValueError:
+        return jsonify({"error": "Ángulo inválido"}), 400
+
+    tmp_input = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp_output = None
+
+    try:
+        import fitz
+
+        file.save(tmp_input.name)
+        tmp_input.close()
+
+        doc = fitz.open(tmp_input.name)
+
+        for page in doc:
+            new_rotation = (page.rotation + angle) % 360
+            page.set_rotation(new_rotation)
+
+        tmp_output = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False).name
+        doc.save(tmp_output)
+        doc.close()
+
+        return send_file(
+            tmp_output,
+            as_attachment=True,
+            download_name='rotado.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if os.path.exists(tmp_input.name):
+            os.remove(tmp_input.name)
+        if tmp_output and os.path.exists(tmp_output):
+            os.remove(tmp_output)
+
 if __name__ == '__main__':
     app.run(debug=False)
