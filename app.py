@@ -308,5 +308,65 @@ def image_to_pdf():
         if tmp_output and os.path.exists(tmp_output):
             os.remove(tmp_output)
 
+@app.route('/numerate/pdf', methods=['POST'])
+def numerate_pdf():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se recibió ningún archivo"}), 400
+
+    file = request.files['file']
+    position = request.form.get('position', 'bottom-center')
+
+    if file.filename == '' or not file.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 400
+
+    tmp_input = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp_output = None
+
+    try:
+        import fitz
+
+        file.save(tmp_input.name)
+        tmp_input.close()
+
+        doc = fitz.open(tmp_input.name)
+        total = doc.page_count
+
+        for i, page in enumerate(doc):
+            rect = page.rect
+            text = f"{i + 1} / {total}"
+            fontsize = 10
+            margin = 25
+
+            if position == 'bottom-center':
+                point = fitz.Point(rect.width / 2 - 15, rect.height - margin)
+            elif position == 'bottom-right':
+                point = fitz.Point(rect.width - 60, rect.height - margin)
+            elif position == 'bottom-left':
+                point = fitz.Point(margin, rect.height - margin)
+            else:
+                point = fitz.Point(rect.width / 2 - 15, rect.height - margin)
+
+            page.insert_text(point, text, fontsize=fontsize, color=(0.3, 0.3, 0.3))
+
+        tmp_output = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False).name
+        doc.save(tmp_output)
+        doc.close()
+
+        return send_file(
+            tmp_output,
+            as_attachment=True,
+            download_name='numerado.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if os.path.exists(tmp_input.name):
+            os.remove(tmp_input.name)
+        if tmp_output and os.path.exists(tmp_output):
+            os.remove(tmp_output)
+
 if __name__ == '__main__':
     app.run(debug=False)
