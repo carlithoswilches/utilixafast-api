@@ -251,5 +251,62 @@ def rotate_pdf():
         if tmp_output and os.path.exists(tmp_output):
             os.remove(tmp_output)
 
+@app.route('/convert/image-to-pdf', methods=['POST'])
+def image_to_pdf():
+    files = request.files.getlist('files')
+
+    if len(files) < 1:
+        return jsonify({"error": "Debes subir al menos 1 imagen"}), 400
+
+    allowed_ext = ('.jpg', '.jpeg', '.png', '.webp', '.bmp')
+
+    for f in files:
+        if f.filename == '' or not f.filename.lower().endswith(allowed_ext):
+            return jsonify({"error": f"{f.filename} no es una imagen válida (usa JPG, PNG, WEBP o BMP)"}), 400
+
+    tmp_paths = []
+    tmp_output = None
+
+    try:
+        import fitz
+
+        doc = fitz.open()
+
+        for f in files:
+            ext = os.path.splitext(f.filename)[1]
+            tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+            f.save(tmp.name)
+            tmp.close()
+            tmp_paths.append(tmp.name)
+
+            img_doc = fitz.open(tmp.name)
+            pdf_bytes = img_doc.convert_to_pdf()
+            img_doc.close()
+
+            img_pdf = fitz.open("pdf", pdf_bytes)
+            doc.insert_pdf(img_pdf)
+            img_pdf.close()
+
+        tmp_output = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False).name
+        doc.save(tmp_output)
+        doc.close()
+
+        return send_file(
+            tmp_output,
+            as_attachment=True,
+            download_name='imagenes_convertidas.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        for path in tmp_paths:
+            if os.path.exists(path):
+                os.remove(path)
+        if tmp_output and os.path.exists(tmp_output):
+            os.remove(tmp_output)
+
 if __name__ == '__main__':
     app.run(debug=False)
