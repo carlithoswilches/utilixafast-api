@@ -434,5 +434,71 @@ def delete_pages_pdf():
         if tmp_output and os.path.exists(tmp_output):
             os.remove(tmp_output)
 
+@app.route('/convert/pdf-to-jpg', methods=['POST'])
+def pdf_to_jpg():
+    if 'file' not in request.files:
+        return jsonify({"error": "No se recibió ningún archivo"}), 400
+
+    file = request.files['file']
+
+    if file.filename == '' or not file.filename.lower().endswith('.pdf'):
+        return jsonify({"error": "El archivo debe ser un PDF"}), 400
+
+    tmp_input = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+    tmp_output = None
+    img_paths = []
+
+    try:
+        import fitz
+        import zipfile
+
+        file.save(tmp_input.name)
+        tmp_input.close()
+
+        doc = fitz.open(tmp_input.name)
+        base_name = os.path.splitext(file.filename)[0]
+        zoom = 2  # ~144 DPI para buena calidad
+        matrix = fitz.Matrix(zoom, zoom)
+
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(matrix=matrix)
+            img_path = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False).name
+            pix.save(img_path)
+            img_paths.append((img_path, f"{base_name}_pagina_{i + 1}.jpg"))
+
+        doc.close()
+
+        if len(img_paths) == 1:
+            return send_file(
+                img_paths[0][0],
+                as_attachment=True,
+                download_name=img_paths[0][1],
+                mimetype='image/jpeg'
+            )
+
+        tmp_output = tempfile.NamedTemporaryFile(suffix='.zip', delete=False).name
+        with zipfile.ZipFile(tmp_output, 'w') as zipf:
+            for path, name in img_paths:
+                zipf.write(path, arcname=name)
+
+        return send_file(
+            tmp_output,
+            as_attachment=True,
+            download_name=f'{base_name}_imagenes.zip',
+            mimetype='application/zip'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        if os.path.exists(tmp_input.name):
+            os.remove(tmp_input.name)
+        for path, _ in img_paths:
+            if os.path.exists(path):
+                os.remove(path)
+        if tmp_output and os.path.exists(tmp_output):
+            os.remove(tmp_output)
+
 if __name__ == '__main__':
     app.run(debug=False)
