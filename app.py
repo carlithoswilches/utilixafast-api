@@ -500,5 +500,74 @@ def pdf_to_jpg():
         if tmp_output and os.path.exists(tmp_output):
             os.remove(tmp_output)
 
+@app.route('/convert/heic-to-jpg', methods=['POST'])
+def heic_to_jpg():
+    files = request.files.getlist('files')
+
+    if len(files) < 1:
+        return jsonify({"error": "Debes subir al menos 1 imagen HEIC"}), 400
+
+    for f in files:
+        if f.filename == '' or not f.filename.lower().endswith(('.heic', '.heif')):
+            return jsonify({"error": f"{f.filename} no es un archivo HEIC/HEIF válido"}), 400
+
+    tmp_paths = []
+    out_paths = []
+    tmp_zip = None
+
+    try:
+        import pillow_heif
+        import zipfile
+
+        pillow_heif.register_heif_opener()
+        from PIL import Image
+
+        for f in files:
+            ext = os.path.splitext(f.filename)[1]
+            tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+            f.save(tmp.name)
+            tmp.close()
+            tmp_paths.append(tmp.name)
+
+            img = Image.open(tmp.name).convert('RGB')
+            out_path = tempfile.NamedTemporaryFile(suffix='.jpg', delete=False).name
+            img.save(out_path, 'JPEG', quality=90)
+
+            base_name = os.path.splitext(f.filename)[0]
+            out_paths.append((out_path, f"{base_name}.jpg"))
+
+        if len(out_paths) == 1:
+            return send_file(
+                out_paths[0][0],
+                as_attachment=True,
+                download_name=out_paths[0][1],
+                mimetype='image/jpeg'
+            )
+
+        tmp_zip = tempfile.NamedTemporaryFile(suffix='.zip', delete=False).name
+        with zipfile.ZipFile(tmp_zip, 'w') as zipf:
+            for path, name in out_paths:
+                zipf.write(path, arcname=name)
+
+        return send_file(
+            tmp_zip,
+            as_attachment=True,
+            download_name='imagenes_convertidas.zip',
+            mimetype='application/zip'
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        for path in tmp_paths:
+            if os.path.exists(path):
+                os.remove(path)
+        for path, _ in out_paths:
+            if os.path.exists(path):
+                os.remove(path)
+        if tmp_zip and os.path.exists(tmp_zip):
+            os.remove(tmp_zip)
+
 if __name__ == '__main__':
     app.run(debug=False)

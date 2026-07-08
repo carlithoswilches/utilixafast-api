@@ -2,3 +2,4 @@ flask
 flask-cors
 pdf2docx
 gunicorn
+pillow-heif
